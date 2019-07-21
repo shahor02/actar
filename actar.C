@@ -45,7 +45,7 @@ struct Point {
     // check if points are neighbours (difference in pixels <=1 in all dimensions
     if (std::abs(PixelCentreXPosition - pntB.PixelCentreXPosition)>1.5*PitchX ||
 	std::abs(PixelCentreYPosition - pntB.PixelCentreYPosition)>1.5*PitchY ||
-	std::abs(PixelCentreZPosition - pntB.PixelCentreXPosition)>1.5*PitchZ) {
+	std::abs(PixelCentreZPosition - pntB.PixelCentreZPosition)>1.5*PitchZ) {
       return false;
     }
     else {
@@ -68,16 +68,20 @@ std::vector<int> pointsPoolIdx;
 
 
 
-struct chain
+struct Chain
 {
   int status = 0;
   std::vector<int> pointIDs; // set of connected poits
 
-  chain(int pntID) {
+  Chain(int pntID) {
     status = 0;
-    pointIDs.push_back(pntID);
+    addPoint(pntID);
   }
 
+  void addPoint(int ip) {
+    pointIDs.push_back(ip);
+  }
+  
   const Point& getGlobalPoint(int i) const {
     return pointsPool[ pointsPoolIdx[i] ];
   }
@@ -87,9 +91,18 @@ struct chain
     const auto& last = getGlobalPoint(pointIDs.back());
     return last.isNeighbour(pnt);
   }
+
+  void print() const {
+    int np = pointIDs.size();
+    printf("Stat:%d, NPnt:%3d | ",status, np);
+    for (int i=0;i<np;i++) {
+      printf("Pnt %3d |",i);
+      getGlobalPoint(pointIDs[i]).print();
+    }
+  }
   
 };
-std::vector<chain> chains;
+std::vector<Chain> chains;
 
 
 int initTree(const char* nameFile = "B2_Digit_5000ev.root", const char* nameTree = "Interest")
@@ -115,6 +128,7 @@ int initTree(const char* nameFile = "B2_Digit_5000ev.root", const char* nameTree
 int getNextEvent()
 {
   pointsPool.clear();
+  chains.clear();
   bool first = true;
   if (entID>=inpTree.GetEntries()) {
     return -1;
@@ -128,7 +142,7 @@ int getNextEvent()
     if (point.EventID!=currEventID) break;
     pointsPool.push_back(point);
   }
-  printf("read %d points for event %lld\n", (int)pointsPool.size(), currEventID);
+  printf("\nread %d points for event %lld\n", (int)pointsPool.size(), currEventID);
   return pointsPool.size();
 }
 
@@ -146,23 +160,45 @@ void ProcessEvent()
       return res<0;
     });
   //
+  /*
   for (int ipt=0;ipt<npnt;ipt++) {
     const auto& pnt = pointsPool[ pointsPoolIdx[ipt] ];
     printf("%3d |",ipt);
     pnt.print();
   }
-
+  */  
   
   // create 1st seed
   chains.emplace_back(0);
   
   for (int ipt=1;ipt<npnt;ipt++) {
     const auto& pnt = pointsPool[ pointsPoolIdx[ipt] ];
-
     // skip repeating points
-    if (pnt.compare( pointsPool[ pointsPoolIdx[ipt] ] )==0) continue;
+    if (pnt.compare( pointsPool[ pointsPoolIdx[ipt-1] ] )==0) {
+      //    printf("skip %d\n",ipt);
+      continue;
+    }
     // loop over all chains and check if the point is compatible
-
+    bool attached = false;
+    for (int ich=(int)chains.size();ich--;) {
+      auto& ch = chains[ich];
+      if (ch.isNeighbourToLast(pnt)) {
+	attached = true;
+	ch.addPoint(ipt);
+      }      
+    }
+    if (!attached) { // start new chain, since the cluster is not neighbouring with any of existing ones
+      chains.emplace_back(ipt);
+    }
+  }
+  
+  // print chains
+  int nch = chains.size();
+  printf("\nNChains: %d\n",nch);
+  for (int ich=0;ich<nch;ich++) {
+    const auto& ch = chains[ich];
+    printf("Ch:%2d |",ich);
+    ch.print();
   }
   
 }
